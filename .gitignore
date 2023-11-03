@@ -1,0 +1,28 @@
+# Ignore node_modules directory
+node_modules/
+
+# Ignore logs and runtime data
+logs/
+*.log
+npm-debug.log*
+
+# Ignore the .env file (containing sensitive environment variables)
+.env
+
+# Ignore build artifacts
+dist/
+out/
+build/
+
+# Ignore development and editor-specific files
+*.swp
+*.swo
+*.swn
+.DS_Store
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Ignore configuration files with API keys, passwords, etc.
+config/*.js
