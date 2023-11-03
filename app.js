@@ -1,12 +1,13 @@
-
 const  { Pinecone, ScoredPineconeRecord } = require ("@pinecone-database/pinecone");
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Configuration, OpenAIApi } = require('openai-edge');
 const { OpenAIStream, StreamingTextResponse } = require('ai');
 const cors = require("cors");
+const dotenv = require('dotenv');
 
 const app = express();
+dotenv.config();
 const port = process.env.PORT || 8080;
 
 // Create an OpenAI API client
