@@ -21,7 +21,7 @@ app.use(bodyParser.json());
 app.use(
   cors({
     credentials: true,  
-    origin: ["*"],
+    origin: ["http://localhost:4200"],
   })
 );
 // Define a POST route for the chat API
