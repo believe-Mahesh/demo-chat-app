@@ -11,7 +11,7 @@ const port = process.env.PORT || 8080;
 
 // Create an OpenAI API client
 const config = new Configuration({
-  apiKey: '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',
+  apiKey: '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',
 });
 const openai = new OpenAIApi(config);
 
@@ -20,7 +20,7 @@ app.use(bodyParser.json());
 app.use(
   cors({
     credentials: true,  
-    origin: ["http://localhost:4200"],
+    origin: ["*"],
   })
 );
 // Define a POST route for the chat API
