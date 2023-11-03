@@ -11,7 +11,7 @@ const port = process.env.PORT || 8080;
 
 // Create an OpenAI API client
 const config = new Configuration({
-  apiKey: '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',
+  apiKey: process.env.OPENAI_API_KEY,
 });
 const openai = new OpenAIApi(config);
 
@@ -149,13 +149,10 @@ const getMatchesFromEmbeddings = async (embeddings, topK, namespace) => {
   // Obtain a client for Pinecone
 
   const pinecone = new Pinecone({      
-    environment: "gcp-starter",      
-    apiKey: "0a8bf34a-7d1b-4dff-bb31-88bc2fe12e0f",      
+    environment: process.env.PINECONE_ENVIRONMENT,      
+    apiKey: process.env.PINECONE_API_KEY,      
   });      
-// await pinecone.init({      
-// 	environment: "gcp-starter",      
-// 	apiKey: "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",      
-// });      
+     
   const indexName = 'chat-app'|| '';
   if (indexName === '') {
     throw new Error('PINECONE_INDEX environment variable not set')
