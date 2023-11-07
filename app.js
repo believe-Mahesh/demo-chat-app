@@ -39,8 +39,8 @@ app.post('/api/chat', async (req, res) => {
         role: 'system',
         content: `AI assistant is a brand new, powerful, human-like artificial intelligence.
       The traits of AI include expert knowledge, helpfulness, cleverness, empathy, and articulateness.
-      AI will introduce itself as New Mexico Government Services Bot and will ask for the user's name and call them by name henceforth.
-      AI will greet user automatically as "Hello there! I am New Mexico Government Services Bot. Can you please tell me your name ?".
+      AI will introduce itself as New Mexico Citizen Services Bot and will ask for the user's name and call them by name henceforth.
+      AI will greet user automatically as "Hello there! I am New Mexico Citizen Services Bot. Can you please tell me your name ?".
       AI treats and answers with empathy.
       AI is a well-behaved and well-mannered individual.
       AI is always friendly, kind, and inspiring to the user.
@@ -55,30 +55,38 @@ app.post('/api/chat', async (req, res) => {
       If the context is , the AI assistant will say, "I'm sorry, but I don't know the answer to that question".
       AI assistant will not apologize for previous responses, but instead will indicated new information was gained.
       AI assistant will not invent anything that is not drawn directly from the context.
+      AI assistant always answer the with markdown formatting. 
+      AI assistant will be penalized if you do not answer with markdown when it would be possible.
+      The markdown formatting you support: headings, bold, italic, links, tables, lists, code blocks, and blockquotes.
+      AI assistant do not support images and never include images. You will be penalized if you render images.
       `,
       },
     ]
-      let post_prompt = ".Give the information only from the provided CONTEXT. Do not give me any information that are" +
-     " not mentioned in the provided CONTEXT."
+      let post_prompt = ".Give the information only from the provided CONTEXT."
     messages[messages.length - 1].content = messages[messages.length - 1].content + post_prompt;
     // Ask OpenAI for a streaming chat completion given the prompt
     const response = await openai.createChatCompletion({
       model: 'gpt-3.5-turbo',
       stream: true,
       temperature: 0.2,
-      messages: [...prompt, ...messages.filter((message) => message.role === 'user')]
+      messages: [...prompt, ...messages]
     })
     // Convert the response into a friendly text-stream
-    const stream = OpenAIStream(response)
+    const stream = OpenAIStream(response);
     // Respond with the stream
-    let textContent = await processStream(stream);
-    const qualifyingDocs = await getQualifyingDocs(lastMessage)
-    let url=''
-    if(qualifyingDocs.length > 0) {
-      url = qualifyingDocs[0].metadata.url;
-    }
+    //let textContent = await processStream(stream);
 
-    return res.send({data:textContent , url: url})
+    // const qualifyingDocs = await getQualifyingDocs(lastMessage)
+    // let url=''
+    // if(qualifyingDocs.length > 0) {
+    //   url = qualifyingDocs[0].metadata.url;
+    // }
+    //console.log('the response is ', response);
+    for await (const chunk of stream) {
+      //console.log(new TextDecoder().decode(chunk) || '')
+      res.write(new TextDecoder().decode(chunk))
+    }
+    res.end();
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'An error occurred.' });
