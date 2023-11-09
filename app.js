@@ -1,4 +1,4 @@
-const  { Pinecone, ScoredPineconeRecord } = require ("@pinecone-database/pinecone");
+const { Pinecone, ScoredPineconeRecord } = require("@pinecone-database/pinecone");
 const express = require('express');
 const bodyParser = require('body-parser');
 const { Configuration, OpenAIApi, ChatCompletionRequestMessageRoleEnum } = require('openai-edge');
@@ -20,7 +20,7 @@ const openai = new OpenAIApi(config);
 app.use(bodyParser.json());
 app.use(
   cors({
-    credentials: true,  
+    credentials: true,
     origin: ["http://localhost:4200"],
   })
 );
@@ -56,7 +56,7 @@ app.post('/api/chat', async (req, res) => {
         `,
       },
     ]
-      let post_prompt = ".Give the information only from the provided Context Block. You always answer the with markdown formatting. You will be penalized if you do not answer with markdown when it would be possible. The markdown formatting you support: headings, bold, italic, links, tables, lists, code blocks, and blockquotes."
+    let post_prompt = ".Give the information only from the provided Context Block. You always answer the with markdown formatting. You will be penalized if you do not answer with markdown when it would be possible. The markdown formatting you support: headings, bold, italic, links, tables, lists, code blocks, and blockquotes."
     messages[messages.length - 1].content = messages[messages.length - 1].content + post_prompt;
     // Ask OpenAI for a streaming chat completion given the prompt
     const response = await openai.createChatCompletion({
@@ -87,6 +87,21 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+app.post('/api/urls', async (req, res) => {
+  const { messages } = req.body;
+  const urls = [];
+  // Get the last message
+  const lastMessage = messages[messages.length - 1];
+  const qualifyingDocs = await getQualifyingDocs(lastMessage, '');
+  if (qualifyingDocs.length > 0) {
+    qualifyingDocs.forEach((doc) => {
+      urls.push(doc.metadata?.url);
+    })
+  }
+  return res.send({ 'url': urls });
+});
+
+
 async function processStream(stream) {
   const chunks = [];
   for await (const chunk of stream) {
@@ -115,7 +130,7 @@ const getContext = async (message, namespace, maxTokens = 3000, minScore = 0.7, 
   return docs.join("\n").substring(0, maxTokens)
 }
 
-const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore = 0.7, getOnlyText = true) => {
+const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore = 0.8, getOnlyText = true) => {
   // Get the embeddings of the input message
   const embedding = await getEmbeddings(message);
 
@@ -123,7 +138,7 @@ const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore 
   const matches = await getMatchesFromEmbeddings(embedding, 3, namespace);
 
   // Filter out the matches that have a score lower than the minimum score
-  return matches.filter(m => m.score && m.score > minScore);
+  return matches.filter(m => m.score && m.score >= minScore);
 
 }
 
@@ -136,14 +151,14 @@ async function getEmbeddings(input) {
     })
 
     const result = await response.json();
-    return result.data[0].embedding 
+    return result.data[0].embedding
 
   } catch (e) {
     console.log("Error calling OpenAI embedding API: ", e);
     throw new Error(`Error calling OpenAI embedding API: ${e}`);
   }
 
-  
+
 }
 
 
@@ -151,12 +166,12 @@ async function getEmbeddings(input) {
 const getMatchesFromEmbeddings = async (embeddings, topK, namespace) => {
   // Obtain a client for Pinecone
 
-  const pinecone = new Pinecone({      
-    environment: process.env.PINECONE_ENVIRONMENT,      
-    apiKey: process.env.PINECONE_API_KEY,      
-  });      
-     
-  const indexName = 'chat-app'|| '';
+  const pinecone = new Pinecone({
+    environment: process.env.PINECONE_ENVIRONMENT,
+    apiKey: process.env.PINECONE_API_KEY,
+  });
+
+  const indexName = 'chat-app' || '';
   if (indexName === '') {
     throw new Error('PINECONE_INDEX environment variable not set')
   }
