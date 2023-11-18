@@ -1,10 +1,20 @@
-const { Pinecone, ScoredPineconeRecord } = require("@pinecone-database/pinecone");
-const express = require('express');
-const bodyParser = require('body-parser');
-const { Configuration, OpenAIApi, ChatCompletionRequestMessageRoleEnum } = require('openai-edge');
-const { OpenAIStream, StreamingTextResponse } = require('ai');
+const {
+  Pinecone,
+  ScoredPineconeRecord,
+} = require("@pinecone-database/pinecone");
+const express = require("express");
+const bodyParser = require("body-parser");
+const {
+  Configuration,
+  OpenAIApi,
+  ChatCompletionRequestMessageRoleEnum,
+} = require("openai-edge");
+const { OpenAIStream, StreamingTextResponse } = require("ai");
 const cors = require("cors");
-const dotenv = require('dotenv');
+const dotenv = require("dotenv");
+const { OpenAI } = require("langchain/llms/openai");
+const { PromptTemplate } = require("langchain/prompts");
+const { LLMChain } = require("langchain/chains");
 
 const app = express();
 dotenv.config();
@@ -25,7 +35,7 @@ app.use(
   })
 );
 // Define a POST route for the chat API
-app.post('/api/chat', async (req, res) => {
+app.post("/api/chat", async (req, res) => {
   try {
     const { messages } = req.body;
 
@@ -33,7 +43,9 @@ app.post('/api/chat', async (req, res) => {
     const lastMessage = messages[messages.length - 1];
 
     // Get the context from the last message
-    const context = await getContext(lastMessage, '');
+
+    const context = await getContext(lastMessage, "");
+
     const prompt = [
       {
         role: ChatCompletionRequestMessageRoleEnum.System,
@@ -55,16 +67,18 @@ app.post('/api/chat', async (req, res) => {
         You do not support images and never include images. You will be penalized if you render images.
         `,
       },
-    ]
-    let post_prompt = ".Give the information only from the provided Context Block. You always answer the with markdown formatting. You will be penalized if you do not answer with markdown when it would be possible. The markdown formatting you support: headings, bold, italic, links, tables, lists, code blocks, and blockquotes."
-    messages[messages.length - 1].content = messages[messages.length - 1].content + post_prompt;
+    ];
+    let post_prompt =
+      ".Give the information only from the provided Context Block. You always answer the with markdown formatting. You will be penalized if you do not answer with markdown when it would be possible. The markdown formatting you support: headings, bold, italic, links, tables, lists, code blocks, and blockquotes.";
+    messages[messages.length - 1].content =
+      messages[messages.length - 1].content + post_prompt;
     // Ask OpenAI for a streaming chat completion given the prompt
     const response = await openai.createChatCompletion({
-      model: 'gpt-3.5-turbo',
+      model: "gpt-3.5-turbo",
       stream: true,
       temperature: 0.2,
-      messages: [...prompt, ...messages]
-    })
+      messages: [...prompt, ...messages],
+    });
     // Convert the response into a friendly text-stream
     const stream = OpenAIStream(response);
     // Respond with the stream
@@ -78,40 +92,58 @@ app.post('/api/chat', async (req, res) => {
     //console.log('the response is ', response);
     for await (const chunk of stream) {
       //console.log(new TextDecoder().decode(chunk) || '')
-      res.write(new TextDecoder().decode(chunk))
+      res.write(new TextDecoder().decode(chunk));
     }
     res.end();
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'An error occurred.' });
+    res.status(500).json({ error: "An error occurred." });
   }
 });
 
-app.post('/api/urls', async (req, res) => {
+const isValidQuestion = async (lastMessage) => {
+  const classificationObject = await getClassification(lastMessage);
+  if (classificationObject.text.includes("question")) {
+    return true;
+  } else {
+    return false;
+  }
+};
+app.post("/api/urls", async (req, res) => {
   const { messages } = req.body;
   const urls = [];
   // Get the last message
   const lastMessage = messages[messages.length - 1];
-  const qualifyingDocs = await getQualifyingDocs(lastMessage, '');
-  if (qualifyingDocs.length > 0) {
-    qualifyingDocs.forEach((doc) => {
-      urls.push(doc.metadata?.url);
-    })
+  const isQuestion = await isValidQuestion(lastMessage);
+  console.log("is this a valid question ", isQuestion);
+  if (isQuestion) {
+    const qualifyingDocs = await getQualifyingDocs(lastMessage, "");
+    if (qualifyingDocs.length > 0) {
+      qualifyingDocs.forEach((doc) => {
+        if (!urls.includes(doc.metadata?.url)) {
+          urls.push(doc.metadata?.url);
+        }
+      });
+    }
   }
-  return res.send({ 'url': urls });
+  return res.send({ url: urls });
 });
-
 
 async function processStream(stream) {
   const chunks = [];
   for await (const chunk of stream) {
     chunks.push(chunk);
   }
-  return Buffer.concat(chunks).toString('utf-8');
+  return Buffer.concat(chunks).toString("utf-8");
 }
 
-
-const getContext = async (message, namespace, maxTokens = 3000, minScore = 0.7, getOnlyText = true) => {
+const getContext = async (
+  message,
+  namespace,
+  maxTokens = 3000,
+  minScore = 0.7,
+  getOnlyText = true
+) => {
   // Get the embeddings of the input message
   const embedding = await getEmbeddings(message);
 
@@ -119,18 +151,24 @@ const getContext = async (message, namespace, maxTokens = 3000, minScore = 0.7, 
   const matches = await getMatchesFromEmbeddings(embedding, 3, namespace);
 
   // Filter out the matches that have a score lower than the minimum score
-  const qualifyingDocs = matches.filter(m => m.score && m.score > minScore);
+  const qualifyingDocs = matches.filter((m) => m.score && m.score > minScore);
   if (!getOnlyText) {
     // Use a map to deduplicate matches by URL
-    return qualifyingDocs
+    return qualifyingDocs;
   }
 
-  let docs = matches ? qualifyingDocs.map(match => (match.metadata).chunk) : [];
+  let docs = matches ? qualifyingDocs.map((match) => match.metadata.chunk) : [];
   // Join all the chunks of text together, truncate to the maximum number of tokens, and return the result
-  return docs.join("\n").substring(0, maxTokens)
-}
+  return docs.join("\n").substring(0, maxTokens);
+};
 
-const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore = 0.8, getOnlyText = true) => {
+const getQualifyingDocs = async (
+  message,
+  namespace,
+  maxTokens = 3000,
+  minScore = 0.8,
+  getOnlyText = true
+) => {
   // Get the embeddings of the input message
   const embedding = await getEmbeddings(message);
 
@@ -138,30 +176,24 @@ const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore 
   const matches = await getMatchesFromEmbeddings(embedding, 2, namespace);
 
   // Filter out the matches that have a score lower than the minimum score
-  return matches.filter(m => m.score && m.score >= minScore);
-
-}
+  return matches.filter((m) => m.score && m.score >= minScore);
+};
 
 async function getEmbeddings(input) {
-  const val = input.content.replace(/\n/g, ' ')
+  const val = input.content.replace(/\n/g, " ");
   try {
     const response = await openai.createEmbedding({
       model: "text-embedding-ada-002",
-      input: val
-    })
+      input: val,
+    });
 
     const result = await response.json();
-    return result.data[0].embedding
-
+    return result.data[0].embedding;
   } catch (e) {
     console.log("Error calling OpenAI embedding API: ", e);
     throw new Error(`Error calling OpenAI embedding API: ${e}`);
   }
-
-
 }
-
-
 
 const getMatchesFromEmbeddings = async (embeddings, topK, namespace) => {
   // Obtain a client for Pinecone
@@ -171,22 +203,22 @@ const getMatchesFromEmbeddings = async (embeddings, topK, namespace) => {
     apiKey: process.env.PINECONE_API_KEY,
   });
 
-  const indexName = 'chat-app' || '';
-  if (indexName === '') {
-    throw new Error('PINECONE_INDEX environment variable not set')
+  const indexName = "chat-app" || "";
+  if (indexName === "") {
+    throw new Error("PINECONE_INDEX environment variable not set");
   }
 
   // Retrieve the list of indexes to check if expected index exists
-  const indexes = await pinecone.listIndexes()
-  if (indexes.filter(i => i.name === indexName).length !== 1) {
-    throw new Error(`Index ${indexName} does not exist`)
+  const indexes = await pinecone.listIndexes();
+  if (indexes.filter((i) => i.name === indexName).length !== 1) {
+    throw new Error(`Index ${indexName} does not exist`);
   }
 
   // Get the Pinecone index
   const index = pinecone.Index(indexName);
 
   // Get the namespace
-  const pineconeNamespace = index.namespace(namespace ?? '')
+  const pineconeNamespace = index.namespace(namespace ?? "");
 
   try {
     // Query the index with the defined request
@@ -194,19 +226,43 @@ const getMatchesFromEmbeddings = async (embeddings, topK, namespace) => {
       vector: embeddings,
       topK,
       includeMetadata: true,
-    })
+    });
 
-
-    return queryResult.matches || []
+    return queryResult.matches || [];
   } catch (e) {
     // Log the error and throw it
-    console.log("Error querying embeddings: ", e)
-    throw new Error(`Error querying embeddings: ${e}`)
+    console.log("Error querying embeddings: ", e);
+    throw new Error(`Error querying embeddings: ${e}`);
   }
-}
+};
 
+const getClassification = async (message) => {
+  try {
+    const model = new OpenAI({ temperature: 0.9, streaming: true });
+    const prompt = PromptTemplate.fromTemplate(
+      `Given a raw text input to a language model, select the category of the input.
+You will be given the names of the available categories and a description of what the category is best suited for.
+	
+	<< CANDIDATE CATEGORIES >>
+	question: Is the given text a question about any person, place or a thing.
+  default: normal conversations
+	
+  REMEMBER: "destination" MUST be one of the candidate prompt names specified below OR it can be "DEFAULT" if the input is not well suited for any of the candidate prompts.
+	<< INPUT >>
+	{input}
+	
+	<< OUTPUT >>`
+    );
+    const chain = new LLMChain({ llm: model, prompt });
+
+    // Call the chain with the inputs and a callback for the streamed tokens
+    const response = await chain.call({ input: message.content });
+    return response;
+  } catch (error) {
+    console.log(error);
+  }
+};
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
-
