@@ -135,7 +135,7 @@ const getQualifyingDocs = async (message, namespace, maxTokens = 3000, minScore 
   const embedding = await getEmbeddings(message);
 
   // Retrieve the matches for the embeddings from the specified namespace
-  const matches = await getMatchesFromEmbeddings(embedding, 3, namespace);
+  const matches = await getMatchesFromEmbeddings(embedding, 2, namespace);
 
   // Filter out the matches that have a score lower than the minimum score
   return matches.filter(m => m.score && m.score >= minScore);
